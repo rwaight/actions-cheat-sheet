@@ -1,0 +1,112 @@
+# based on https://github.com/rwaight/rwaight.github.io/blob/main/.github/workflows/publish-pages.yml
+name: Publish site
+run-name: Deploy Actions Cheat Sheet to GitHub Pages
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '**.adoc'
+      - 'theme/**'
+      - 'index.md'
+      - '.github/workflows/publish-pages.yml'
+
+permissions:
+  contents: write
+  id-token: write
+  pages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout files from commit tree
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git Credentials for github-actions bot
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Install fonts
+        run: |
+          mkdir ~/.fonts
+          cp theme/fonts/*.otf ~/.fonts
+          fc-cache -f -v
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Cache node modules
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: node_modules
+          key: modules-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            modules-
+
+      - name: NPM Install
+        run: npm install
+        env:
+          CI: true
+
+      - name: AsciiDoctor-PDF
+        run: npm run generate-pdf
+
+      - name: Create index.html
+        run: |
+          cat > index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>GitHub Actions Cheat Sheet</title>
+          </head>
+          <body>
+            <p>Checkout the Actions Cheat Sheet <a href="./actions-cheat-sheet.html">HTML</a> or <a href="./actions-cheat-sheet.pdf">PDF</a></p>
+          </body>
+          </html>
+          EOF
+
+      - name: Stage files and deploy to gh-pages branch
+        run: |
+          mkdir -p /tmp/gh-pages-deploy
+          cp actions-cheat-sheet.html /tmp/gh-pages-deploy/
+          cp actions-cheat-sheet.pdf /tmp/gh-pages-deploy/
+          cp index.html /tmp/gh-pages-deploy/
+          cp -r theme /tmp/gh-pages-deploy/
+          touch /tmp/gh-pages-deploy/.nojekyll
+          cd /tmp/gh-pages-deploy
+          git init
+          git add .
+          git commit -m 'Deploy Actions Cheat Sheet to GitHub Pages'
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:gh-pages
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout files from commit tree
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: gh-pages
+
+      - name: Setup Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
